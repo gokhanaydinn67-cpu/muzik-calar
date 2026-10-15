@@ -288,7 +288,6 @@ fun PlayerApp() {
                         position = position,
                         duration = duration,
                         onOpen = { showPlayer = true },
-                        onSeek = { c.seekTo(it) },
                         onPrev = { c.seekToPreviousMediaItem() },
                         onToggle = { if (isPlaying) c.pause() else c.play() },
                         onNext = { c.seekToNextMediaItem() }
@@ -490,78 +489,71 @@ fun NowPlayingBar(
     position: Long,
     duration: Long,
     onOpen: () -> Unit,
-    onSeek: (Long) -> Unit,
     onPrev: () -> Unit,
     onToggle: () -> Unit,
     onNext: () -> Unit
 ) {
-    var dragValue by remember { mutableStateOf<Float?>(null) }
-    val max = duration.coerceAtLeast(1L).toFloat()
+    val progress = if (duration > 0) (position.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f
 
     Surface(
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         tonalElevation = 6.dp
     ) {
-        Column(
-            Modifier
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-        ) {
+        Column(Modifier.navigationBarsPadding()) {
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier.fillMaxWidth().height(3.dp),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = Color.Transparent
+            )
             Row(
-                Modifier.fillMaxWidth().clickable(onClick = onOpen),
+                Modifier.fillMaxWidth().padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Cover(song, 48.dp)
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        song.title,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        song.artist,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                Row(
+                    Modifier.weight(1f).clickable(onClick = onOpen),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Cover(song, 48.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            song.title,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            song.artist,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                }
+                IconButton(onClick = onPrev, modifier = Modifier.size(48.dp)) {
+                    Icon(
+                        Icons.Rounded.SkipPrevious,
+                        contentDescription = "Önceki",
+                        modifier = Modifier.size(28.dp)
                     )
                 }
-                IconButton(onClick = onPrev) {
-                    Icon(Icons.Rounded.SkipPrevious, contentDescription = "Önceki")
-                }
-                FilledIconButton(onClick = onToggle) {
+                FilledIconButton(onClick = onToggle, modifier = Modifier.size(52.dp)) {
                     Icon(
                         if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        contentDescription = "Oynat / Duraklat"
+                        contentDescription = "Oynat / Duraklat",
+                        modifier = Modifier.size(28.dp)
                     )
                 }
-                IconButton(onClick = onNext) {
-                    Icon(Icons.Rounded.SkipNext, contentDescription = "Sonraki")
+                IconButton(onClick = onNext, modifier = Modifier.size(48.dp)) {
+                    Icon(
+                        Icons.Rounded.SkipNext,
+                        contentDescription = "Sonraki",
+                        modifier = Modifier.size(28.dp)
+                    )
                 }
-            }
-            Slider(
-                value = dragValue ?: position.toFloat().coerceAtMost(max),
-                onValueChange = { dragValue = it },
-                onValueChangeFinished = {
-                    dragValue?.let { onSeek(it.toLong()) }
-                    dragValue = null
-                },
-                valueRange = 0f..max
-            )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(
-                    formatTime(dragValue?.toLong() ?: position),
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
-                Text(
-                    formatTime(duration),
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
             }
         }
     }
@@ -678,42 +670,53 @@ fun FullPlayer(
 
         Spacer(Modifier.height(20.dp))
 
+        // Kontroller: sol ve sağ yan taraflar eşit genişlikte, orta grup tam ortada
         Row(
             Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onCycleMode) {
-                Icon(
-                    modeIcon(playMode),
-                    contentDescription = modeLabel(playMode),
-                    tint = if (playMode == 0) Color.White.copy(alpha = 0.6f) else Color.White
-                )
+            Box(Modifier.width(56.dp), contentAlignment = Alignment.Center) {
+                IconButton(onClick = onCycleMode, modifier = Modifier.size(56.dp)) {
+                    Icon(
+                        modeIcon(playMode),
+                        contentDescription = modeLabel(playMode),
+                        tint = if (playMode == 0) Color.White.copy(alpha = 0.6f) else Color.White,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
             }
-            IconButton(onClick = onPrev) {
-                Icon(
-                    Icons.Rounded.SkipPrevious,
-                    contentDescription = "Önceki",
-                    tint = Color.White,
-                    modifier = Modifier.size(36.dp)
-                )
+            Row(
+                Modifier.weight(1f),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onPrev, modifier = Modifier.size(64.dp)) {
+                    Icon(
+                        Icons.Rounded.SkipPrevious,
+                        contentDescription = "Önceki",
+                        tint = Color.White,
+                        modifier = Modifier.size(44.dp)
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                FilledIconButton(onClick = onToggle, modifier = Modifier.size(88.dp)) {
+                    Icon(
+                        if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        contentDescription = "Oynat / Duraklat",
+                        modifier = Modifier.size(48.dp)
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                IconButton(onClick = onNext, modifier = Modifier.size(64.dp)) {
+                    Icon(
+                        Icons.Rounded.SkipNext,
+                        contentDescription = "Sonraki",
+                        tint = Color.White,
+                        modifier = Modifier.size(44.dp)
+                    )
+                }
             }
-            FilledIconButton(onClick = onToggle, modifier = Modifier.size(72.dp)) {
-                Icon(
-                    if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                    contentDescription = "Oynat / Duraklat",
-                    modifier = Modifier.size(36.dp)
-                )
-            }
-            IconButton(onClick = onNext) {
-                Icon(
-                    Icons.Rounded.SkipNext,
-                    contentDescription = "Sonraki",
-                    tint = Color.White,
-                    modifier = Modifier.size(36.dp)
-                )
-            }
-            Spacer(Modifier.size(48.dp))
+            Box(Modifier.width(56.dp))
         }
 
         Spacer(Modifier.height(12.dp))
