@@ -25,14 +25,15 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,7 +43,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -62,7 +62,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
-data class Song(val id: Long, val title: String, val artist: String, val uri: Uri)
+data class Song(
+    val id: Long,
+    val title: String,
+    val artist: String,
+    val uri: Uri,
+    val dateAdded: Long
+)
+
+enum class SongSort { NAME, DATE }
 
 fun Song.toMediaItem(): MediaItem =
     MediaItem.Builder()
@@ -81,7 +89,8 @@ fun loadSongs(context: Context): List<Song> {
     val projection = arrayOf(
         MediaStore.Audio.Media._ID,
         MediaStore.Audio.Media.TITLE,
-        MediaStore.Audio.Media.ARTIST
+        MediaStore.Audio.Media.ARTIST,
+        MediaStore.Audio.Media.DATE_ADDED
     )
     val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND " +
         "${MediaStore.Audio.Media.DURATION} > 30000"
@@ -90,6 +99,7 @@ fun loadSongs(context: Context): List<Song> {
         val idCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
         val titleCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
         val artistCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+        val dateCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
         while (c.moveToNext()) {
             val id = c.getLong(idCol)
             val artist = c.getString(artistCol)
@@ -100,7 +110,8 @@ fun loadSongs(context: Context): List<Song> {
                     artist = if (artist == null || artist == "<unknown>") "Bilinmeyen sanatçı" else artist,
                     uri = ContentUris.withAppendedId(
                         MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id
-                    )
+                    ),
+                    dateAdded = c.getLong(dateCol)
                 )
             )
         }
@@ -200,11 +211,19 @@ fun PlayerApp() {
     }
 
     var query by remember { mutableStateOf("") }
-    val filtered = remember(songs, query) {
-        if (query.isBlank()) songs
-        else songs.filter {
-            it.title.contains(query, ignoreCase = true) ||
-                it.artist.contains(query, ignoreCase = true)
+    var sortMode by remember { mutableStateOf(SongSort.DATE) }
+    val filtered = remember(songs, query, sortMode) {
+        val base = if (query.isBlank()) {
+            songs
+        } else {
+            songs.filter {
+                it.title.contains(query, ignoreCase = true) ||
+                    it.artist.contains(query, ignoreCase = true)
+            }
+        }
+        when (sortMode) {
+            SongSort.NAME -> base.sortedBy { it.title.lowercase() }
+            SongSort.DATE -> base.sortedByDescending { it.dateAdded }
         }
     }
 
@@ -352,6 +371,25 @@ fun PlayerApp() {
                         ) {
                             Icon(Icons.Rounded.Shuffle, contentDescription = "Karıştır")
                         }
+                    }
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 20.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        FilterChip(
+                            selected = sortMode == SongSort.NAME,
+                            onClick = { sortMode = SongSort.NAME },
+                            label = { Text("Ada göre") }
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        FilterChip(
+                            selected = sortMode == SongSort.DATE,
+                            onClick = { sortMode = SongSort.DATE },
+                            label = { Text("Tarihe göre") }
+                        )
                     }
                     Spacer(Modifier.height(8.dp))
                     PullToRefreshBox(
@@ -576,7 +614,7 @@ fun FullPlayer(
     var dragY by remember { mutableStateOf(0f) }
     var dragValue by remember { mutableStateOf<Float?>(null) }
     val max = duration.coerceAtLeast(1L).toFloat()
-    val screenWidth = LocalConfiguration.current.screenWidthDp
+    val screenWidth = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
     val coverSize = (screenWidth - 64).coerceAtMost(340).dp
 
     Column(
@@ -670,53 +708,42 @@ fun FullPlayer(
 
         Spacer(Modifier.height(20.dp))
 
-        // Kontroller: sol ve sağ yan taraflar eşit genişlikte, orta grup tam ortada
         Row(
             Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(Modifier.width(56.dp), contentAlignment = Alignment.Center) {
-                IconButton(onClick = onCycleMode, modifier = Modifier.size(56.dp)) {
-                    Icon(
-                        modeIcon(playMode),
-                        contentDescription = modeLabel(playMode),
-                        tint = if (playMode == 0) Color.White.copy(alpha = 0.6f) else Color.White,
-                        modifier = Modifier.size(26.dp)
-                    )
-                }
+            IconButton(onClick = onCycleMode) {
+                Icon(
+                    modeIcon(playMode),
+                    contentDescription = modeLabel(playMode),
+                    tint = if (playMode == 0) Color.White.copy(alpha = 0.6f) else Color.White
+                )
             }
-            Row(
-                Modifier.weight(1f),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onPrev, modifier = Modifier.size(64.dp)) {
-                    Icon(
-                        Icons.Rounded.SkipPrevious,
-                        contentDescription = "Önceki",
-                        tint = Color.White,
-                        modifier = Modifier.size(44.dp)
-                    )
-                }
-                Spacer(Modifier.width(12.dp))
-                FilledIconButton(onClick = onToggle, modifier = Modifier.size(88.dp)) {
-                    Icon(
-                        if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        contentDescription = "Oynat / Duraklat",
-                        modifier = Modifier.size(48.dp)
-                    )
-                }
-                Spacer(Modifier.width(12.dp))
-                IconButton(onClick = onNext, modifier = Modifier.size(64.dp)) {
-                    Icon(
-                        Icons.Rounded.SkipNext,
-                        contentDescription = "Sonraki",
-                        tint = Color.White,
-                        modifier = Modifier.size(44.dp)
-                    )
-                }
+            IconButton(onClick = onPrev) {
+                Icon(
+                    Icons.Rounded.SkipPrevious,
+                    contentDescription = "Önceki",
+                    tint = Color.White,
+                    modifier = Modifier.size(36.dp)
+                )
             }
-            Box(Modifier.width(56.dp))
+            FilledIconButton(onClick = onToggle, modifier = Modifier.size(72.dp)) {
+                Icon(
+                    if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                    contentDescription = "Oynat / Duraklat",
+                    modifier = Modifier.size(36.dp)
+                )
+            }
+            IconButton(onClick = onNext) {
+                Icon(
+                    Icons.Rounded.SkipNext,
+                    contentDescription = "Sonraki",
+                    tint = Color.White,
+                    modifier = Modifier.size(36.dp)
+                )
+            }
+            Spacer(Modifier.size(48.dp))
         }
 
         Spacer(Modifier.height(12.dp))
