@@ -13,13 +13,18 @@ import android.provider.MediaStore
 import android.util.Size
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -34,11 +39,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -49,7 +56,9 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 data class Song(val id: Long, val title: String, val artist: String, val uri: Uri)
 
@@ -102,6 +111,28 @@ fun formatTime(ms: Long): String {
     return "%d:%02d".format(s / 60, s % 60)
 }
 
+// 0 = Sırayla, 1 = Karışık, 2 = Tek şarkıyı tekrarla
+fun modeIcon(mode: Int) = when (mode) {
+    1 -> Icons.Rounded.Shuffle
+    2 -> Icons.Rounded.RepeatOne
+    else -> Icons.Rounded.List
+}
+
+fun modeLabel(mode: Int) = when (mode) {
+    1 -> "Karışık"
+    2 -> "Tek şarkıyı tekrarla"
+    else -> "Sırayla"
+}
+
+fun applyMode(c: MediaController, mode: Int) {
+    c.shuffleModeEnabled = mode == 1
+    c.repeatMode = when (mode) {
+        2 -> Player.REPEAT_MODE_ONE
+        1 -> Player.REPEAT_MODE_ALL
+        else -> Player.REPEAT_MODE_OFF
+    }
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -127,9 +158,11 @@ fun MuzikTheme(content: @Composable () -> Unit) {
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlayerApp() {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val audioPerm = if (Build.VERSION.SDK_INT >= 33)
         Manifest.permission.READ_MEDIA_AUDIO
     else Manifest.permission.READ_EXTERNAL_STORAGE
@@ -157,6 +190,7 @@ fun PlayerApp() {
     }
 
     var songs by remember { mutableStateOf<List<Song>>(emptyList()) }
+    var refreshing by remember { mutableStateOf(false) }
     LaunchedEffect(hasPermission) {
         if (hasPermission) {
             songs = withContext(Dispatchers.IO) { loadSongs(context) }
@@ -177,6 +211,10 @@ fun PlayerApp() {
     var currentId by remember { mutableStateOf<String?>(null) }
     var position by remember { mutableStateOf(0L) }
     var duration by remember { mutableStateOf(0L) }
+    var playMode by remember { mutableStateOf(0) }
+    var showPlayer by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = showPlayer) { showPlayer = false }
 
     DisposableEffect(Unit) {
         val token = SessionToken(context, ComponentName(context, PlayerService::class.java))
@@ -221,104 +259,151 @@ fun PlayerApp() {
         }
     }
 
-    fun playList(list: List<Song>, index: Int, shuffle: Boolean = false) {
+    fun playList(list: List<Song>, index: Int) {
         val c = controller ?: return
-        c.shuffleModeEnabled = shuffle
+        applyMode(c, playMode)
         c.setMediaItems(list.map { it.toMediaItem() }, index, 0L)
         c.prepare()
         c.play()
     }
 
-    val currentSong = songs.firstOrNull { it.id.toString() == currentId }
+    fun cycleMode() {
+        playMode = (playMode + 1) % 3
+        controller?.let { applyMode(it, playMode) }
+    }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        bottomBar = {
-            val c = controller
+    val currentSong = songs.firstOrNull { it.id.toString() == currentId }
+    val c = controller
+
+    Box(Modifier.fillMaxSize()) {
+        Scaffold(
+            containerColor = MaterialTheme.colorScheme.background,
+            bottomBar = {
+                if (currentSong != null && c != null) {
+                    NowPlayingBar(
+                        song = currentSong,
+                        isPlaying = isPlaying,
+                        position = position,
+                        duration = duration,
+                        onOpen = { showPlayer = true },
+                        onSeek = { c.seekTo(it) },
+                        onPrev = { c.seekToPreviousMediaItem() },
+                        onToggle = { if (isPlaying) c.pause() else c.play() },
+                        onNext = { c.seekToNextMediaItem() }
+                    )
+                }
+            }
+        ) { padding ->
+            if (!hasPermission) {
+                Box(
+                    Modifier.fillMaxSize().padding(padding),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Müziklerine erişmek için izin gerekli")
+                        Spacer(Modifier.height(16.dp))
+                        Button(onClick = { launcher.launch(arrayOf(audioPerm)) }) {
+                            Text("İzin ver")
+                        }
+                    }
+                }
+            } else {
+                Column(Modifier.fillMaxSize().padding(padding)) {
+                    Text(
+                        "Müzik",
+                        fontSize = 34.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(start = 20.dp, top = 16.dp)
+                    )
+                    Text(
+                        "${songs.size} şarkı",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                        modifier = Modifier.padding(start = 20.dp, bottom = 12.dp)
+                    )
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextField(
+                            value = query,
+                            onValueChange = { query = it },
+                            placeholder = { Text("Şarkı veya sanatçı ara") },
+                            leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                            singleLine = true,
+                            shape = RoundedCornerShape(16.dp),
+                            colors = TextFieldDefaults.colors(
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surface
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        FilledIconButton(
+                            onClick = {
+                                if (filtered.isNotEmpty()) {
+                                    playMode = 1
+                                    playList(filtered, filtered.indices.random())
+                                }
+                            }
+                        ) {
+                            Icon(Icons.Rounded.Shuffle, contentDescription = "Karıştır")
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    PullToRefreshBox(
+                        isRefreshing = refreshing,
+                        onRefresh = {
+                            scope.launch {
+                                refreshing = true
+                                songs = withContext(Dispatchers.IO) { loadSongs(context) }
+                                refreshing = false
+                            }
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(bottom = 8.dp)
+                        ) {
+                            itemsIndexed(filtered, key = { _, s -> s.id }) { index, song ->
+                                SongRow(
+                                    song = song,
+                                    active = song.id.toString() == currentId,
+                                    onClick = {
+                                        playList(filtered, index)
+                                        showPlayer = true
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        AnimatedVisibility(
+            visible = showPlayer && currentSong != null && c != null,
+            modifier = Modifier.fillMaxSize(),
+            enter = slideInVertically(initialOffsetY = { it }),
+            exit = slideOutVertically(targetOffsetY = { it })
+        ) {
             if (currentSong != null && c != null) {
-                NowPlayingBar(
+                FullPlayer(
                     song = currentSong,
                     isPlaying = isPlaying,
                     position = position,
                     duration = duration,
+                    playMode = playMode,
                     onSeek = { c.seekTo(it) },
                     onPrev = { c.seekToPreviousMediaItem() },
                     onToggle = { if (isPlaying) c.pause() else c.play() },
-                    onNext = { c.seekToNextMediaItem() }
+                    onNext = { c.seekToNextMediaItem() },
+                    onCycleMode = { cycleMode() },
+                    onClose = { showPlayer = false }
                 )
-            }
-        }
-    ) { padding ->
-        if (!hasPermission) {
-            Box(
-                Modifier.fillMaxSize().padding(padding),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Müziklerine erişmek için izin gerekli")
-                    Spacer(Modifier.height(16.dp))
-                    Button(onClick = { launcher.launch(arrayOf(audioPerm)) }) {
-                        Text("İzin ver")
-                    }
-                }
-            }
-        } else {
-            Column(Modifier.fillMaxSize().padding(padding)) {
-                Text(
-                    "Müzik",
-                    fontSize = 34.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(start = 20.dp, top = 16.dp)
-                )
-                Text(
-                    "${songs.size} şarkı",
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
-                    modifier = Modifier.padding(start = 20.dp, bottom = 12.dp)
-                )
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        placeholder = { Text("Şarkı veya sanatçı ara") },
-                        leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
-                        singleLine = true,
-                        shape = RoundedCornerShape(16.dp),
-                        colors = TextFieldDefaults.colors(
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                            focusedContainerColor = MaterialTheme.colorScheme.surface,
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surface
-                        ),
-                        modifier = Modifier.weight(1f)
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    FilledIconButton(
-                        onClick = {
-                            if (filtered.isNotEmpty()) {
-                                playList(filtered, filtered.indices.random(), true)
-                            }
-                        }
-                    ) {
-                        Icon(Icons.Rounded.Shuffle, contentDescription = "Karıştır")
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                LazyColumn(
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(bottom = 8.dp)
-                ) {
-                    itemsIndexed(filtered, key = { _, s -> s.id }) { index, song ->
-                        SongRow(
-                            song = song,
-                            active = song.id.toString() == currentId,
-                            onClick = { playList(filtered, index) }
-                        )
-                    }
-                }
             }
         }
     }
@@ -362,7 +447,7 @@ fun Cover(song: Song, size: Dp) {
         value = withContext(Dispatchers.IO) {
             if (Build.VERSION.SDK_INT >= 29) {
                 try {
-                    context.contentResolver.loadThumbnail(song.uri, Size(256, 256), null)
+                    context.contentResolver.loadThumbnail(song.uri, Size(512, 512), null)
                 } catch (e: Exception) {
                     null
                 }
@@ -402,6 +487,7 @@ fun NowPlayingBar(
     isPlaying: Boolean,
     position: Long,
     duration: Long,
+    onOpen: () -> Unit,
     onSeek: (Long) -> Unit,
     onPrev: () -> Unit,
     onToggle: () -> Unit,
@@ -420,7 +506,10 @@ fun NowPlayingBar(
                 .navigationBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier.fillMaxWidth().clickable(onClick = onOpen),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Cover(song, 48.dp)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
@@ -473,5 +562,158 @@ fun NowPlayingBar(
                 )
             }
         }
+    }
+}
+
+@Composable
+fun FullPlayer(
+    song: Song,
+    isPlaying: Boolean,
+    position: Long,
+    duration: Long,
+    playMode: Int,
+    onSeek: (Long) -> Unit,
+    onPrev: () -> Unit,
+    onToggle: () -> Unit,
+    onNext: () -> Unit,
+    onCycleMode: () -> Unit,
+    onClose: () -> Unit
+) {
+    var dragY by remember { mutableStateOf(0f) }
+    var dragValue by remember { mutableStateOf<Float?>(null) }
+    val max = duration.coerceAtLeast(1L).toFloat()
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .offset { IntOffset(0, dragY.coerceAtLeast(0f).roundToInt()) }
+            .background(
+                Brush.verticalGradient(listOf(Color(0xFF2B2358), Color(0xFF0E0E12)))
+            )
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(horizontal = 24.dp)
+            .pointerInput(Unit) {
+                detectVerticalDragGestures(
+                    onDragStart = { dragY = 0f },
+                    onDragEnd = {
+                        if (dragY > 200f) onClose() else dragY = 0f
+                    },
+                    onDragCancel = { dragY = 0f },
+                    onVerticalDrag = { change, amount ->
+                        change.consume()
+                        dragY += amount
+                    }
+                )
+            }
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(top = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onClose) {
+                Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Kapat")
+            }
+            Spacer(Modifier.weight(1f))
+            Text(
+                "Şimdi çalıyor",
+                fontSize = 14.sp,
+                color = Color.White.copy(alpha = 0.7f)
+            )
+            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.size(48.dp))
+        }
+
+        Spacer(Modifier.height(24.dp))
+        Cover(song, 300.dp)
+        Spacer(Modifier.height(28.dp))
+
+        Text(
+            song.title,
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = Color.White
+        )
+        Text(
+            song.artist,
+            fontSize = 15.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = Color.White.copy(alpha = 0.6f)
+        )
+
+        Spacer(Modifier.height(24.dp))
+
+        Slider(
+            value = dragValue ?: position.toFloat().coerceAtMost(max),
+            onValueChange = { dragValue = it },
+            onValueChangeFinished = {
+                dragValue?.let { onSeek(it.toLong()) }
+                dragValue = null
+            },
+            valueRange = 0f..max
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(
+                formatTime(dragValue?.toLong() ?: position),
+                fontSize = 12.sp,
+                color = Color.White.copy(alpha = 0.6f)
+            )
+            Text(
+                formatTime(duration),
+                fontSize = 12.sp,
+                color = Color.White.copy(alpha = 0.6f)
+            )
+        }
+
+        Spacer(Modifier.height(24.dp))
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onCycleMode) {
+                Icon(
+                    modeIcon(playMode),
+                    contentDescription = modeLabel(playMode),
+                    tint = if (playMode == 0) Color.White.copy(alpha = 0.6f) else Color.White
+                )
+            }
+            IconButton(onClick = onPrev) {
+                Icon(
+                    Icons.Rounded.SkipPrevious,
+                    contentDescription = "Önceki",
+                    tint = Color.White,
+                    modifier = Modifier.size(36.dp)
+                )
+            }
+            FilledIconButton(onClick = onToggle, modifier = Modifier.size(72.dp)) {
+                Icon(
+                    if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                    contentDescription = "Oynat / Duraklat",
+                    modifier = Modifier.size(36.dp)
+                )
+            }
+            IconButton(onClick = onNext) {
+                Icon(
+                    Icons.Rounded.SkipNext,
+                    contentDescription = "Sonraki",
+                    tint = Color.White,
+                    modifier = Modifier.size(36.dp)
+                )
+            }
+            Spacer(Modifier.size(48.dp))
+        }
+
+        Spacer(Modifier.height(12.dp))
+        Text(
+            modeLabel(playMode),
+            fontSize = 13.sp,
+            color = Color.White.copy(alpha = 0.6f),
+            modifier = Modifier.align(Alignment.CenterHorizontally)
+        )
     }
 }
