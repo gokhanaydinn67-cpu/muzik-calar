@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -583,6 +584,8 @@ fun FullPlayer(
     var dragY by remember { mutableStateOf(0f) }
     var dragValue by remember { mutableStateOf<Float?>(null) }
     val max = duration.coerceAtLeast(1L).toFloat()
+    val screenWidth = LocalConfiguration.current.screenWidthDp
+    val coverSize = (screenWidth - 64).coerceAtMost(340).dp
 
     Column(
         Modifier
@@ -606,14 +609,15 @@ fun FullPlayer(
                         dragY += amount
                     }
                 )
-            }
+            },
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Row(
             Modifier.fillMaxWidth().padding(top = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onClose) {
-                Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Kapat")
+                Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Kapat", tint = Color.White)
             }
             Spacer(Modifier.weight(1f))
             Text(
@@ -625,8 +629,10 @@ fun FullPlayer(
             Spacer(Modifier.size(48.dp))
         }
 
-        Spacer(Modifier.height(24.dp))
-        Cover(song, 300.dp)
+        Spacer(Modifier.weight(1f))
+
+        Cover(song, coverSize)
+
         Spacer(Modifier.height(28.dp))
 
         Text(
@@ -645,7 +651,7 @@ fun FullPlayer(
             color = Color.White.copy(alpha = 0.6f)
         )
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.weight(1f))
 
         Slider(
             value = dragValue ?: position.toFloat().coerceAtMost(max),
@@ -654,7 +660,8 @@ fun FullPlayer(
                 dragValue?.let { onSeek(it.toLong()) }
                 dragValue = null
             },
-            valueRange = 0f..max
+            valueRange = 0f..max,
+            modifier = Modifier.fillMaxWidth()
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(
@@ -669,11 +676,11 @@ fun FullPlayer(
             )
         }
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(20.dp))
 
         Row(
             Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onCycleMode) {
@@ -713,8 +720,8 @@ fun FullPlayer(
         Text(
             modeLabel(playMode),
             fontSize = 13.sp,
-            color = Color.White.copy(alpha = 0.6f),
-            modifier = Modifier.align(Alignment.CenterHorizontally)
+            color = Color.White.copy(alpha = 0.6f)
         )
+        Spacer(Modifier.height(16.dp))
     }
 }
