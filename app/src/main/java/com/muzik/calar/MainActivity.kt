@@ -52,6 +52,7 @@ import java.util.Locale
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ThemeState.current = ThemeStore.load(this)
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
@@ -62,16 +63,28 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MuzikTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = darkColorScheme(
+    val bg = ThemeState.current
+    val scheme = if (bg.light) {
+        lightColorScheme(
+            primary = Color(0xFF6A3FD0),
+            background = Color(0xFFF7F7FA),
+            surface = Color(0xFFFFFFFF),
+            onBackground = Color(0xFF1A1A22),
+            onSurface = Color(0xFF1A1A22),
+            onSurfaceVariant = Color(0xFF4A4A58)
+        )
+    } else {
+        darkColorScheme(
             primary = Color(0xFFB388FF),
             background = Color(0xFF0E0E12),
             surface = Color(0xFF1A1A22),
             onBackground = Color(0xFFF2F2F7),
             onSurface = Color(0xFFF2F2F7)
-        ),
-        content = content
-    )
+        )
+    }
+    CompositionLocalProvider(LocalContentColor provides scheme.onBackground) {
+        MaterialTheme(colorScheme = scheme, content = content)
+    }
 }
 
 fun formatDate(epochSeconds: Long): String =
@@ -116,7 +129,7 @@ fun PlayerApp() {
         }
     }
 
-    var bgChoice by remember { mutableStateOf(ThemeStore.load(context)) }
+    var bgChoice by remember { mutableStateOf(ThemeState.current) }
     var showThemes by remember { mutableStateOf(false) }
     var tab by remember { mutableIntStateOf(0) }
     var sortMode by remember { mutableStateOf(SongSort.DATE) }
@@ -485,7 +498,7 @@ fun PlayerApp() {
                 onDismissRequest = { showThemes = false },
                 title = { Text("Arka plan") },
                 text = {
-                    Column {
+                    Column(Modifier.verticalScroll(rememberScrollState())) {
                         AppBackground.values().forEach { option ->
                             Row(
                                 Modifier
