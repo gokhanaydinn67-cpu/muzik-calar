@@ -1,6 +1,9 @@
 package com.muzik.calar
 
 import android.content.Context
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
@@ -26,6 +29,11 @@ enum class AppBackground(
     fun brush(): Brush = Brush.verticalGradient(colors)
 }
 
+// Seçili tema. Değiştiğinde uygulama arayüzü otomatik yenilenir.
+object ThemeState {
+    var current by mutableStateOf(AppBackground.NIGHT)
+}
+
 object ThemeStore {
     private const val PREFS = "theme"
     private const val KEY = "background"
@@ -41,5 +49,6 @@ object ThemeStore {
             .edit()
             .putString(KEY, bg.name)
             .apply()
+        ThemeState.current = bg
     }
 }
