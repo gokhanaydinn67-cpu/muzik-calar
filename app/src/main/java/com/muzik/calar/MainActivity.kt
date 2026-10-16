@@ -125,6 +125,18 @@ fun PlayerApp() {
     var playMode by remember { mutableIntStateOf(0) }
     var showPlayer by remember { mutableStateOf(false) }
 
+    var playlists by remember { mutableStateOf(MusicStore.loadLists(context)) }
+    var counts by remember { mutableStateOf(MusicStore.loadCounts(context)) }
+    var openPlaylist by remember { mutableStateOf<String?>(null) }
+    var creatingList by remember { mutableStateOf(false) }
+    var newListName by remember { mutableStateOf("") }
+    var addTarget by remember { mutableStateOf<Song?>(null) }
+
+    fun savePlaylists(newMap: Map<String, List<Long>>) {
+        playlists = newMap
+        MusicStore.saveLists(context, newMap)
+    }
+
     val filtered = remember(songs, query, sortMode) {
         val base = if (query.isBlank()) {
             songs
@@ -143,6 +155,7 @@ fun PlayerApp() {
     var controller by remember { mutableStateOf<MediaController?>(null) }
     var isPlaying by remember { mutableStateOf(false) }
     var currentId by remember { mutableStateOf<String?>(null) }
+    var countedFor by remember { mutableStateOf<String?>(null) }
     var position by remember { mutableStateOf(0L) }
     var duration by remember { mutableStateOf(0L) }
 
@@ -172,6 +185,7 @@ fun PlayerApp() {
 
                 override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
                     currentId = item?.mediaId
+                    countedFor = null
                 }
             }
             c.addListener(listener)
@@ -181,11 +195,21 @@ fun PlayerApp() {
         }
     }
 
+    // Konum takibi ve dinlenme sayacı.
+    // Şarkının yarısından fazlası çalındığında sayaç bir artar.
     LaunchedEffect(controller) {
         while (true) {
             controller?.let {
                 position = it.currentPosition.coerceAtLeast(0L)
                 duration = it.duration.coerceAtLeast(0L)
+            }
+            val id = currentId
+            if (isPlaying && id != null && duration > 0 &&
+                position > duration / 2 && countedFor != id
+            ) {
+                countedFor = id
+                MusicStore.incrementCount(context, id.toLong())
+                counts = MusicStore.loadCounts(context)
             }
             delay(500)
         }
@@ -282,7 +306,7 @@ fun PlayerApp() {
                     }
                 }
 
-                if (searching && hasPermission) {
+                if (searching && hasPermission && tab == 0) {
                     TextField(
                         value = query,
                         onValueChange = { query = it },
@@ -312,14 +336,24 @@ fun PlayerApp() {
                         }
                     }
                 } else if (tab == 1) {
-                    Column(
-                        Modifier.fillMaxSize(),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Text(
-                            "Çalma listeleri yakında",
-                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                    Box(Modifier.weight(1f).fillMaxWidth()) {
+                        MusicPlaylistsTab(
+                            songs = songs,
+                            lists = playlists,
+                            counts = counts,
+                            openName = openPlaylist,
+                            onOpen = { openPlaylist = it },
+                            onCreate = { creatingList = true },
+                            onDelete = { name ->
+                                savePlaylists(playlists - name)
+                                if (openPlaylist == name) openPlaylist = null
+                            },
+                            onRemove = { name, id ->
+                                savePlaylists(
+                                    playlists + (name to playlists[name].orEmpty().filter { it != id })
+                                )
+                            },
+                            onPlay = { list, index -> playList(list, index) }
                         )
                     }
                 } else {
@@ -408,6 +442,7 @@ fun PlayerApp() {
                                     },
                                     onMenuOpen = { menuFor = song },
                                     onMenuClose = { menuFor = null },
+                                    onAddToList = { addTarget = song },
                                     onShare = { shareSong(context, song.uri) },
                                     onRename = {
                                         renameText = song.title
@@ -486,6 +521,68 @@ fun PlayerApp() {
             )
         }
 
+        if (creatingList) {
+            AlertDialog(
+                onDismissRequest = { creatingList = false },
+                title = { Text("Yeni liste") },
+                text = {
+                    OutlinedTextField(
+                        value = newListName,
+                        onValueChange = { newListName = it },
+                        singleLine = true,
+                        label = { Text("Liste adı") }
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val name = newListName.trim()
+                        if (name.isNotEmpty() && !playlists.containsKey(name)) {
+                            savePlaylists(playlists + (name to emptyList<Long>()))
+                        }
+                        newListName = ""
+                        creatingList = false
+                    }) {
+                        Text("Oluştur")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { creatingList = false }) {
+                        Text("İptal")
+                    }
+                }
+            )
+        }
+
+        addTarget?.let { target ->
+            AlertDialog(
+                onDismissRequest = { addTarget = null },
+                title = { Text("Çalma listesine ekle") },
+                text = {
+                    Column {
+                        if (playlists.isEmpty()) {
+                            Text("Önce Çalma Listeleri sekmesinden bir liste oluştur.")
+                        }
+                        for (name in playlists.keys) {
+                            TextButton(onClick = {
+                                val ids = playlists[name].orEmpty()
+                                if (!ids.contains(target.id)) {
+                                    savePlaylists(playlists + (name to (ids + target.id)))
+                                }
+                                addTarget = null
+                            }) {
+                                Text(name)
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { addTarget = null }) {
+                        Text("Kapat")
+                    }
+                }
+            )
+        }
+
         renameTarget?.let { target ->
             AlertDialog(
                 onDismissRequest = { renameTarget = null },
@@ -557,6 +654,7 @@ fun SongListItem(
     onClick: () -> Unit,
     onMenuOpen: () -> Unit,
     onMenuClose: () -> Unit,
+    onAddToList: () -> Unit,
     onShare: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit
@@ -597,6 +695,14 @@ fun SongListItem(
                 Icon(Icons.Rounded.MoreVert, contentDescription = "Seçenekler")
             }
             DropdownMenu(expanded = menuOpen, onDismissRequest = onMenuClose) {
+                DropdownMenuItem(
+                    text = { Text("Çalma listesine ekle") },
+                    leadingIcon = { Icon(Icons.Rounded.PlaylistAdd, contentDescription = null) },
+                    onClick = {
+                        onMenuClose()
+                        onAddToList()
+                    }
+                )
                 DropdownMenuItem(
                     text = { Text("Paylaş") },
                     leadingIcon = { Icon(Icons.Rounded.Share, contentDescription = null) },
