@@ -75,6 +75,8 @@ private fun MusicPlaylistList(
     onDelete: (String) -> Unit,
     onPlay: (List<Song>, Int) -> Unit
 ) {
+    val textColor = MaterialTheme.colorScheme.onBackground
+    val dimColor = textColor.copy(alpha = 0.6f)
     val top = topSongs(songs, counts, 20)
 
     LazyColumn(Modifier.fillMaxSize()) {
@@ -83,6 +85,7 @@ private fun MusicPlaylistList(
                 "Çalma Listeleri",
                 fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
+                color = textColor,
                 modifier = Modifier.padding(start = 20.dp, top = 12.dp)
             )
             Spacer(Modifier.height(8.dp))
@@ -116,16 +119,21 @@ private fun MusicPlaylistList(
                         name,
                         fontWeight = FontWeight.Medium,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        color = textColor
                     )
                     Text(
                         "${lists[name].orEmpty().size} şarkı",
                         fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                        color = dimColor
                     )
                 }
                 IconButton(onClick = { onDelete(name) }) {
-                    Icon(Icons.Rounded.Delete, contentDescription = "Listeyi sil")
+                    Icon(
+                        Icons.Rounded.Delete,
+                        contentDescription = "Listeyi sil",
+                        tint = textColor
+                    )
                 }
             }
         }
@@ -136,6 +144,7 @@ private fun MusicPlaylistList(
                     "Sık kullanılanlar",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
+                    color = textColor,
                     modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 4.dp)
                 )
             }
@@ -147,7 +156,7 @@ private fun MusicPlaylistList(
                     Text(
                         "${counts[song.id] ?: 0} kez",
                         fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                        color = dimColor
                     )
                     Spacer(Modifier.width(8.dp))
                 }
@@ -165,6 +174,8 @@ private fun MusicPlaylistDetail(
     onRemove: (String, Long) -> Unit,
     onPlay: (List<Song>, Int) -> Unit
 ) {
+    val textColor = MaterialTheme.colorScheme.onBackground
+    val dimColor = textColor.copy(alpha = 0.6f)
     val list = lists[name].orEmpty().mapNotNull { id ->
         songs.firstOrNull { it.id == id }
     }
@@ -177,14 +188,15 @@ private fun MusicPlaylistDetail(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Rounded.ArrowBack, contentDescription = "Geri")
+                Icon(Icons.Rounded.ArrowBack, contentDescription = "Geri", tint = textColor)
             }
             Text(
                 name,
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                color = textColor
             )
         }
 
@@ -192,7 +204,7 @@ private fun MusicPlaylistDetail(
             Text(
                 "Bu listede şarkı yok. Şarkılar sekmesinde bir şarkının üç noktasından ekleyebilirsin.",
                 modifier = Modifier.padding(20.dp),
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                color = dimColor
             )
         }
 
@@ -203,7 +215,11 @@ private fun MusicPlaylistDetail(
                     onClick = { onPlay(list, index) }
                 ) {
                     IconButton(onClick = { onRemove(name, song.id) }) {
-                        Icon(Icons.Rounded.Close, contentDescription = "Listeden çıkar")
+                        Icon(
+                            Icons.Rounded.Close,
+                            contentDescription = "Listeden çıkar",
+                            tint = textColor
+                        )
                     }
                 }
             }
@@ -217,6 +233,9 @@ fun MiniSongRow(
     onClick: () -> Unit,
     trailing: @Composable () -> Unit
 ) {
+    val textColor = MaterialTheme.colorScheme.onBackground
+    val dimColor = textColor.copy(alpha = 0.6f)
+
     Row(
         Modifier
             .fillMaxWidth()
@@ -231,14 +250,15 @@ fun MiniSongRow(
                 song.title,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                fontWeight = FontWeight.Medium
+                fontWeight = FontWeight.Medium,
+                color = textColor
             )
             Text(
                 song.artist,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                color = dimColor
             )
         }
         trailing()
