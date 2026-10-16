@@ -15,11 +15,13 @@ class PlayerService : MediaSessionService() {
 
     private var session: MediaSession? = null
 
-    // Uygulama ikonu, bildirim kartında kapak olarak kullanılır.
+    // Uygulama ikonu 128x128'e küçültülerek tek sefer hazırlanır.
+    // Büyük ikon her şarkıda kopyalanınca bellek dolup uygulama kapanıyordu.
     private val appIcon: ByteArray by lazy {
-        val bmp = BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher)
+        val raw = BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher)
+        val small = Bitmap.createScaledBitmap(raw, 128, 128, true)
         val out = ByteArrayOutputStream()
-        bmp.compress(Bitmap.CompressFormat.PNG, 100, out)
+        small.compress(Bitmap.CompressFormat.PNG, 100, out)
         out.toByteArray()
     }
 
