@@ -31,7 +31,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalConfiguration
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 @Composable
@@ -199,9 +201,27 @@ fun FullPlayer(
 ) {
     var dragY by remember { mutableStateOf(0f) }
     var dragValue by remember { mutableStateOf<Float?>(null) }
+    // Çubuk bırakıldığında yeni konum oynatıcıdan gelene kadar hedef burada tutulur.
+    var pendingSeek by remember { mutableStateOf<Long?>(null) }
     val max = duration.coerceAtLeast(1L).toFloat()
     val screenWidth = LocalConfiguration.current.screenWidthDp
     val coverSize = (screenWidth - 64).coerceAtMost(340).dp
+
+    LaunchedEffect(position) {
+        val pending = pendingSeek
+        if (pending != null && abs(position - pending) < 1500L) {
+            pendingSeek = null
+        }
+    }
+
+    LaunchedEffect(pendingSeek) {
+        if (pendingSeek != null) {
+            delay(2000)
+            pendingSeek = null
+        }
+    }
+
+    val shownPosition = dragValue?.toLong() ?: pendingSeek ?: position
 
     Column(
         Modifier
@@ -270,10 +290,14 @@ fun FullPlayer(
         Spacer(Modifier.weight(1f))
 
         Slider(
-            value = dragValue ?: position.toFloat().coerceAtMost(max),
+            value = (dragValue ?: pendingSeek?.toFloat() ?: position.toFloat()).coerceIn(0f, max),
             onValueChange = { dragValue = it },
             onValueChangeFinished = {
-                dragValue?.let { onSeek(it.toLong()) }
+                val d = dragValue
+                if (d != null) {
+                    pendingSeek = d.toLong()
+                    onSeek(d.toLong())
+                }
                 dragValue = null
             },
             valueRange = 0f..max,
@@ -281,7 +305,7 @@ fun FullPlayer(
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(
-                formatTime(dragValue?.toLong() ?: position),
+                formatTime(shownPosition),
                 fontSize = 12.sp,
                 color = Color.White.copy(alpha = 0.6f)
             )
