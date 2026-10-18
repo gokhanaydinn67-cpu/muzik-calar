@@ -2,6 +2,8 @@ package com.muzik.calar
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.exoplayer.ExoPlayer
@@ -26,7 +28,16 @@ class PlayerService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-        val player = ExoPlayer.Builder(this).build()
+        // Kulaklık çıkarılınca ya da Bluetooth kopunca müziği durdurur.
+        // Ses odağını da müzik olarak tanımlar, böylece diğer uygulamalarla düzgün çalışır.
+        val audioAttributes = AudioAttributes.Builder()
+            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+            .setUsage(C.USAGE_MEDIA)
+            .build()
+        val player = ExoPlayer.Builder(this)
+            .setAudioAttributes(audioAttributes, true)
+            .setHandleAudioBecomingNoisy(true)
+            .build()
         session = MediaSession.Builder(this, player)
             .setCallback(object : MediaSession.Callback {
                 override fun onAddMediaItems(
