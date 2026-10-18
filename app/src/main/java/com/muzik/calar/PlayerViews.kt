@@ -134,15 +134,15 @@ fun NowPlayingBar(
                 trackColor = Color.Transparent
             )
             Row(
-                Modifier.fillMaxWidth().padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
                     Modifier.weight(1f).clickable(onClick = onOpen),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Cover(song, 48.dp)
-                    Spacer(Modifier.width(12.dp))
+                    Cover(song, 44.dp)
+                    Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
                             song.title,
@@ -159,25 +159,26 @@ fun NowPlayingBar(
                         )
                     }
                 }
-                IconButton(onClick = onPrev, modifier = Modifier.size(48.dp)) {
+                Spacer(Modifier.width(4.dp))
+                IconButton(onClick = onPrev, modifier = Modifier.size(56.dp)) {
                     Icon(
                         Icons.Rounded.SkipPrevious,
                         contentDescription = "Önceki",
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(32.dp)
                     )
                 }
-                FilledIconButton(onClick = onToggle, modifier = Modifier.size(52.dp)) {
+                FilledIconButton(onClick = onToggle, modifier = Modifier.size(60.dp)) {
                     Icon(
                         if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                         contentDescription = "Oynat / Duraklat",
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(34.dp)
                     )
                 }
-                IconButton(onClick = onNext, modifier = Modifier.size(48.dp)) {
+                IconButton(onClick = onNext, modifier = Modifier.size(56.dp)) {
                     Icon(
                         Icons.Rounded.SkipNext,
                         contentDescription = "Sonraki",
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(32.dp)
                     )
                 }
             }
