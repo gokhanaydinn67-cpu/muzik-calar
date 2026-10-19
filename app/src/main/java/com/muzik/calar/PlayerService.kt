@@ -42,8 +42,6 @@ class PlayerService : MediaSessionService() {
         val player = ExoPlayer.Builder(this)
             .setAudioAttributes(audioAttributes, true)
             .setHandleAudioBecomingNoisy(true)
-            // Ekran kapalıyken de oynatıcı uyanık kalır, kilit ekranı tuşları çalışır.
-            .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
         session = MediaSession.Builder(this, player)
             .setCallback(object : MediaSession.Callback {
