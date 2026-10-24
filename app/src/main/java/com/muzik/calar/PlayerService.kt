@@ -1,5 +1,7 @@
 package com.muzik.calar
 
+import android.app.PendingIntent
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.AudioDeviceCallback
@@ -43,7 +45,19 @@ class PlayerService : MediaSessionService() {
             .setAudioAttributes(audioAttributes, true)
             .setHandleAudioBecomingNoisy(true)
             .build()
+
+        // Kilit ekranındaki karta dokununca uygulama açılır.
+        val openAppIntent = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java).addFlags(
+                Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
+            ),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
         session = MediaSession.Builder(this, player)
+            .setSessionActivity(openAppIntent)
             .setCallback(object : MediaSession.Callback {
                 override fun onAddMediaItems(
                     mediaSession: MediaSession,
